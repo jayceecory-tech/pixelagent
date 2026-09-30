@@ -32,6 +32,14 @@
 
 ---
 
+## 相关 APK
+
+| 文件 | 说明 |
+|------|------|
+| `app-debug-0.8.apk` | PixelAgent 当前调试包 |
+| `app-debug-0.2.apk` … `0.7.apk` | 历史调试包 |
+| `MinisApp-1.14-arm64-v8a.apk` | 配套安装包（包名 `com.openminis.app`） |
+
 ## 仓库内文件
 
 ```

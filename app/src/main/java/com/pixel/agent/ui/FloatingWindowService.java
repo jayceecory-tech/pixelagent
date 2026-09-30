@@ -65,7 +65,8 @@ public class FloatingWindowService extends Service {
     private boolean collapsed = false;
     private boolean animating = false;
     private int dockSide = Gravity.START; // START=左, END=右
-    private int expandedY = dp(4);
+    /** 在 onCreate 里赋值，不能在字段初始化时调 dp()（Service 尚未 attach） */
+    private int expandedY = 4;
 
     public static void show(Context ctx) {
         Intent i = new Intent(ctx, FloatingWindowService.class);
@@ -84,6 +85,7 @@ public class FloatingWindowService extends Service {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        expandedY = dp(4);
         createChannel();
         startForeground(2001, buildNotification("PixelAgent 悬浮控制"));
         addOverlay();

@@ -107,7 +107,39 @@ public class FollowFlow implements Runnable {
 
     /** 当前前台是否微信 */
     private boolean onWechat() {
-        return TapService.isWechatForeground();
+        String fg = currentForegroundPackage();
+        return TapService.PKG_WECHAT.equals(fg);
+    }
+
+    /**
+     * 前台包名：优先无障碍事件；失败时用 ActivityManager（不依赖无障碍存活）。
+     */
+    private String currentForegroundPackage() {
+        String a11y = TapService.foregroundPackage;
+        if (TapService.PKG_WECHAT.equals(a11y)) return a11y;
+        String am = amForegroundPackage();
+        // 两边都不像微信时，以 AM 为准（更接近真实前台）
+        if (am != null) return am;
+        return a11y;
+    }
+
+    private String amForegroundPackage() {
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager)
+                    context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) return null;
+            java.util.List<android.app.ActivityManager.RunningAppProcessInfo> list =
+                    am.getRunningAppProcesses();
+            if (list == null) return null;
+            for (android.app.ActivityManager.RunningAppProcessInfo p : list) {
+                if (p == null || p.processName == null) continue;
+                if (p.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                        || p.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                    return p.processName;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     /**
@@ -115,23 +147,30 @@ public class FollowFlow implements Runnable {
      * @return true=可以安全点击
      */
     private boolean ensureWechatForeground(boolean logIfRecovered) {
-        if (TapService.instance == null) return false;
         if (onWechat()) return true;
-        String pkg = TapService.foregroundPackage;
+        String pkg = currentForegroundPackage();
         log("前台不是微信: " + pkg + ", 拉回微信");
         openWechat();
-        sleep(2000);
-        // 仍不在微信: BACK 若干次再拉
+        sleep(2200);
         for (int i = 0; i < 3 && !onWechat(); i++) {
-            back();
+            if (TapService.instance != null) {
+                back();
+            }
             openWechat();
             sleep(1500);
         }
         if (onWechat()) {
-            if (logIfRecovered) log("已回到微信前台");
+            if (logIfRecovered) log("已回到微信前台: " + TapService.foregroundPackage);
             return true;
         }
-        log("仍无法回到微信, 暂停点击");
+        // 无障碍断开时仍可能已打开微信，但事件没更新
+        String now = currentForegroundPackage();
+        if (TapService.PKG_WECHAT.equals(now)) {
+            if (logIfRecovered) log("已回到微信前台(AM): " + now);
+            return true;
+        }
+        log("仍无法确认微信前台, 暂停点击 (tap="
+                + (TapService.instance != null) + ")");
         return false;
     }
 

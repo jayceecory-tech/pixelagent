@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.pixel.agent'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.pixel.agent"
+        minSdk 29          // Android 10+: ImageReader + 无障碍dispatchGesture
+        targetSdk 34
+        versionCode 8
+        versionName "0.8"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

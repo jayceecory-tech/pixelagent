@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PixelAgent 微信互关（悬浮窗版）"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="状态: 待启动"
+        android:textSize="14sp"
+        android:paddingBottom="12dp" />
+
+    <Button
+        android:id="@+id/btnTest"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="0. 测试截屏+检测(看logcat)" />
+
+    <Button
+        android:id="@+id/btnCapture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="1. 启动截屏服务（选整个屏幕）" />
+
+    <Button
+        android:id="@+id/btnAccessibility"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="2. 开启无障碍（只开 PixelAgent）" />
+
+    <Button
+        android:id="@+id/btnFloat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="3. 显示悬浮窗（需允许悬浮窗权限）" />
+
+    <EditText
+        android:id="@+id/editMsg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="私信话术"
+        android:text="@string/default_dm_msg" />
+
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="4. 弹出悬浮窗并打开微信（点悬浮窗开始）" />
+
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="关闭悬浮窗" />
+
+    <TextView
+        android:id="@+id/logText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:scrollbars="vertical"
+        android:text="日志:\n" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="用法: 截屏→无障碍→悬浮窗→微信前台→点悬浮窗「开始」。不要开 TalkBack。"
+        android:textSize="11sp"
+        android:paddingTop="8dp" />
+</LinearLayout>

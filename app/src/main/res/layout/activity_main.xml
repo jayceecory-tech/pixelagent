@@ -64,6 +64,12 @@
         android:layout_height="wrap_content"
         android:text="关闭悬浮窗" />
 
+    <Button
+        android:id="@+id/btnRestoreIme"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="5. 恢复键盘（搜狗/系统输入法）" />
+
     <TextView
         android:id="@+id/logText"
         android:layout_width="match_parent"

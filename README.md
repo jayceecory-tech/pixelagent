@@ -20,7 +20,7 @@
 
 | 项目 | 状态 |
 |------|------|
-| 版本 | **0.13**（`versionCode=13`） |
+| 版本 | **0.14**（`versionCode=14`） |
 | 截屏引擎 | 已修 Android 14 `MediaProjection.Callback` 必需注册 |
 | 像素缓冲 | 已修 `rowStride` 导致的 `ArrayIndexOutOfBounds` |
 | 中文输入 | 优先 `ADB_INPUT_B64`；已去掉无焦点时的 `ADB_CLEAR_TEXT`（会弄崩 AdbIME） |
@@ -36,9 +36,12 @@
 
 | 文件 | 说明 |
 |------|------|
-| `app-debug-0.13.apk` | PixelAgent 当前调试包 |
-| `app-debug-0.2.apk` … `0.12.apk` | 历史调试包 |
+| `app-debug-0.14.apk` | PixelAgent 最新包（仅保留这一个） |
 | `MinisApp-1.14-arm64-v8a.apk` | 配套安装包（包名 `com.openminis.app`） |
+
+### 0.14 新增
+
+- 主界面按钮 **「恢复键盘」**：一键切回搜狗 vivo / 系统输入法
 
 ### 0.9–0.13 调整摘要
 
@@ -54,8 +57,7 @@
 ```
 pixelagent/
 ├── README.md
-├── app-debug-0.13.apk          # 当前调试包
-├── app-debug-0.2.apk … 0.12.apk
+├── app-debug-0.14.apk          # 最新包
 ├── app/
 │   └── src/main/java/com/pixel/agent/
 │       ├── MainActivity.java

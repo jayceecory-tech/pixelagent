@@ -21,6 +21,15 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_OVERLAY = 101;
     private static final int TARGET = 5;
 
+    /** 常用系统/厂商输入法（优先恢复） */
+    private static final String[] PREF_IME_CANDIDATES = {
+            "com.sohu.inputmethod.sogou.vivo/.SogouIME",
+            "com.sohu.inputmethod.sogou/.SogouIME",
+            "com.baidu.input_vivo/.ImeVivoService",
+            "com.iflytek.inputmethod.vivo/.ImeService",
+            "com.android.inputmethod.latin/.LatinIME",
+    };
+
     private TextView statusText, logText;
     private EditText editMsg;
 
@@ -44,6 +53,75 @@ public class MainActivity extends AppCompatActivity {
             statusText.setText("状态: 悬浮窗已关闭");
         });
         findViewById(R.id.btnFloat).setOnClickListener(v -> ensureOverlayThenFloat());
+        findViewById(R.id.btnRestoreIme).setOnClickListener(v -> restoreSystemIme());
+    }
+
+    /** 恢复到搜狗/系统输入法（调试时可能被切到 ADB Keyboard） */
+    private void restoreSystemIme() {
+        String cur = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+        String target = pickSystemIme(cur);
+        if (target == null) {
+            // 兜底: 打开输入法设置让用户手动选
+            toast("未找到搜狗/系统输入法，请手动选择");
+            statusText.setText("状态: 请到设置切换输入法");
+            try {
+                startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
+            } catch (Exception ignored) {}
+            return;
+        }
+        Settings.Secure.putString(
+                getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD, target);
+        String now = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+        if (target.equals(now)) {
+            String label = imeLabel(target);
+            statusText.setText("状态: 键盘已恢复 " + label);
+            toast("键盘已恢复: " + label);
+        } else {
+            toast("设置失败，请到「设置→系统→输入法」手动切换");
+            statusText.setText("状态: 键盘恢复未生效");
+        }
+        logText.append("恢复输入法: " + (now != null ? now : "null") + "\n");
+    }
+
+    /** 在候选列表里挑一个当前已启用、且不是 ADBKeyboard 的输入法 */
+    private String pickSystemIme(String current) {
+        if (current != null && !current.contains("adbkeyboard")
+                && !current.contains("ADB")) {
+            // 已经不是 ADB，优先保持/切到搜狗候选
+            for (String c : PREF_IME_CANDIDATES) {
+                if (c.equals(current)) return c;
+            }
+        }
+        String enabled = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.ENABLED_INPUT_METHODS);
+        for (String c : PREF_IME_CANDIDATES) {
+            if (enabled != null && enabled.contains(c)) return c;
+        }
+        // enabled 列表格式可能被分号截断，再宽松匹配包名
+        if (enabled != null) {
+            for (String c : PREF_IME_CANDIDATES) {
+                String pkg = c.substring(0, c.indexOf('/'));
+                if (enabled.contains(pkg)) return c;
+            }
+        }
+        // 最后: 任意非 ADB 的已启用输入法
+        if (enabled != null) {
+            for (String part : enabled.split(":")) {
+                if (!part.contains("adbkeyboard") && part.contains("/")) return part;
+            }
+        }
+        return null;
+    }
+
+    private String imeLabel(String id) {
+        if (id == null) return "未知";
+        if (id.contains("sogou.vivo")) return "搜狗输入法 vivo";
+        if (id.contains("sogou")) return "搜狗输入法";
+        if (id.contains("baidu")) return "百度输入法";
+        if (id.contains("adbkeyboard")) return "ADB Keyboard";
+        return id;
     }
 
     private void startCapture() {
@@ -105,7 +183,6 @@ public class MainActivity extends AppCompatActivity {
         ensureOverlayThenFloat();
         statusText.setText("状态: 请点悬浮窗「开始」");
         toast("已弹出悬浮窗，微信前台点开始");
-        // 尝试打开微信，方便用户看到悬浮窗叠在微信上
         Intent it = getPackageManager().getLaunchIntentForPackage("com.tencent.mm");
         if (it != null) {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

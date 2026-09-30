@@ -1,5 +1,8 @@
 package com.pixel.agent.ui;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,6 +13,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -17,24 +21,26 @@ import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.AccelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 
-import com.pixel.agent.R;
 import com.pixel.agent.engine.CaptureService;
 import com.pixel.agent.engine.TapService;
 import com.pixel.agent.flow.FollowFlow;
 
 /**
- * 悬浮窗控制面板：常驻在微信上层，点击「开始」跑互关流程。
- * 目的：MainActivity 切后台后 vivo 容易冻结/断开无障碍；
- * 悬浮窗保持进程可见，流程在微信前台时仍可点开始/停止。
+ * 悬浮窗控制面板。
+ * 支持：展开/收起贴边气泡（滑动或按钮），避免挡住微信点击。
  */
 public class FloatingWindowService extends Service {
     private static final String TAG = "PixelAgent.Float";
@@ -46,12 +52,20 @@ public class FloatingWindowService extends Service {
     public static volatile FloatingWindowService instance;
 
     private WindowManager windowManager;
-    private View floatView;
+    private FrameLayout panelRoot;
+    private LinearLayout panel;
+    private TextView bubble;
     private TextView statusView;
     private Button startBtn;
+    private Button minBtn;
     private FollowFlow flow;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Runnable statusTick;
+
+    private boolean collapsed = false;
+    private boolean animating = false;
+    private int dockSide = Gravity.START; // START=左, END=右
+    private int expandedY = dp(4);
 
     public static void show(Context ctx) {
         Intent i = new Intent(ctx, FloatingWindowService.class);
@@ -101,11 +115,11 @@ public class FloatingWindowService extends Service {
     public void onDestroy() {
         ui.removeCallbacks(statusTick);
         stopFlow();
-        if (floatView != null) {
+        if (panelRoot != null) {
             try {
-                windowManager.removeView(floatView);
+                windowManager.removeView(panelRoot);
             } catch (Throwable ignored) {}
-            floatView = null;
+            panelRoot = null;
         }
         if (instance == this) instance = null;
         super.onDestroy();
@@ -120,14 +134,42 @@ public class FloatingWindowService extends Service {
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
 
+        panelRoot = new FrameLayout(this);
+        panel = buildPanel();
+        bubble = buildBubble();
+
+        panelRoot.addView(panel);
+        panelRoot.addView(bubble, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        bubble.setVisibility(View.GONE);
+
+        WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type, flags, PixelFormat.TRANSLUCENT);
+        wlp.gravity = Gravity.TOP | Gravity.START;
+        wlp.x = dp(6);
+        wlp.y = expandedY;
+        windowManager.addView(panelRoot, wlp);
+
+        installDragToCollapse(panel, wlp);
+        installBubbleTap(bubble, wlp);
+        Log.i(TAG, "float panel added");
+    }
+
+    private LinearLayout buildPanel() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#CC1B1B1B"));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#CC1B1B1B"));
+        bg.setCornerRadius(dp(12));
+        root.setBackground(bg);
         int pad = dp(10);
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("PixelAgent 悬浮控制");
+        title.setText("PixelAgent");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -145,12 +187,11 @@ public class FloatingWindowService extends Service {
 
         startBtn = new Button(this);
         startBtn.setText("开始");
-        // 不能用微信关注绿 #07C160，否则像素检测会当成名片关注钮
         startBtn.setBackgroundColor(Color.parseColor("#1565C0"));
         startBtn.setTextColor(Color.WHITE);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-        lp.rightMargin = dp(6);
-        startBtn.setLayoutParams(lp);
+        LinearLayout.LayoutParams lpStart = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        lpStart.rightMargin = dp(6);
+        startBtn.setLayoutParams(lpStart);
         startBtn.setOnClickListener(v -> toggleFlow());
         row.addView(startBtn);
 
@@ -167,21 +208,177 @@ public class FloatingWindowService extends Service {
 
         root.addView(row);
 
-        LinearLayout.LayoutParams rootLp = new LinearLayout.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT);
-        WindowManager.LayoutParams wlp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                type, flags, PixelFormat.TRANSLUCENT);
-        // 放在左上角状态栏下方，避免盖住微信列表/底部按钮
-        // 注意: dp 在 560dpi 下约 ×3.5，y 用很小的 dp 值
-        wlp.gravity = Gravity.TOP | Gravity.START;
-        wlp.x = dp(6);
-        wlp.y = dp(4); // ≈14px @560dpi，紧贴状态栏下沿
+        minBtn = new Button(this);
+        minBtn.setText("收起");
+        minBtn.setBackgroundColor(Color.parseColor("#455A64"));
+        minBtn.setTextColor(Color.WHITE);
+        minBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
+        minBtn.setOnClickListener(v -> collapseToEdge());
+        root.addView(minBtn);
 
-        windowManager.addView(root, wlp);
-        floatView = root;
+        return root;
+    }
+
+    private TextView buildBubble() {
+        TextView b = new TextView(this);
+        b.setText("P");
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(Color.parseColor("#1565C0"));
+        b.setBackground(bg);
+        int sz = dp(48);
+        b.setLayoutParams(new FrameLayout.LayoutParams(sz, sz));
+        return b;
+    }
+
+    /** 拖到左/右边沿 → 贴边收起 */
+    private void installDragToCollapse(View target, WindowManager.LayoutParams wlp) {
+        final float[] startX = {0};
+        final float[] startY = {0};
+        final int[] origX = {0};
+        final int[] origY = {0};
+        target.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    startX[0] = event.getRawX();
+                    startY[0] = event.getRawY();
+                    origX[0] = wlp.x;
+                    origY[0] = wlp.y;
+                    return false;
+                case MotionEvent.ACTION_MOVE:
+                    float dx = event.getRawX() - startX[0];
+                    float dy = event.getRawY() - startY[0];
+                    wlp.x = origX[0] + (int) dx;
+                    wlp.y = origY[0] + (int) dy;
+                    try {
+                        windowManager.updateViewLayout(panelRoot, wlp);
+                    } catch (Throwable ignored) {}
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    float totalX = event.getRawX() - startX[0];
+                    float totalY = event.getRawY() - startY[0];
+                    // 小位移视为点击，交给子按钮；大幅位移判定为拖到边
+                    if (Math.abs(totalX) > dp(40) || Math.abs(totalY) > dp(40)) {
+                        int screenW = getResources().getDisplayMetrics().widthPixels;
+                        if (wlp.x < screenW / 3f) {
+                            dockSide = Gravity.START;
+                            collapseToEdge();
+                        } else if (wlp.x > screenW * 2f / 3f) {
+                            dockSide = Gravity.END;
+                            collapseToEdge();
+                        } else {
+                            // 落回左上
+                            wlp.x = dp(6);
+                            wlp.y = expandedY;
+                            try {
+                                windowManager.updateViewLayout(panelRoot, wlp);
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                    return false;
+            }
+            return false;
+        });
+    }
+
+    private void installBubbleTap(TextView b, WindowManager.LayoutParams wlp) {
+        b.setOnClickListener(v -> expandFromEdge(wlp));
+    }
+
+    private void collapseToEdge() {
+        if (panelRoot == null || animating || collapsed) return;
+        final WindowManager.LayoutParams wlp = (WindowManager.LayoutParams) panelRoot.getLayoutParams();
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        final int fromX = wlp.x;
+        final int fromY = wlp.y;
+        final int toX = dockSide == Gravity.START ? -dp(10) : screenW - dp(40);
+        final int toY = dp(120);
+
+        animating = true;
+        ValueAnimator an = ValueAnimator.ofFloat(0f, 1f);
+        an.setDuration(280);
+        an.setInterpolator(new AccelerateInterpolator());
+        an.addUpdateListener(va -> {
+            float f = (float) va.getAnimatedValue();
+            wlp.x = (int) (fromX + (toX - fromX) * f);
+            wlp.y = (int) (fromY + (toY - fromY) * f);
+            panel.setAlpha(1f - f * 0.85f);
+            panel.setScaleX(1f - f * 0.35f);
+            panel.setScaleY(1f - f * 0.35f);
+            try {
+                windowManager.updateViewLayout(panelRoot, wlp);
+            } catch (Throwable ignored) {}
+        });
+        an.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                panel.setVisibility(View.GONE);
+                bubble.setVisibility(View.VISIBLE);
+                // 气泡贴边
+                wlp.gravity = Gravity.TOP | (dockSide == Gravity.START ? Gravity.START : Gravity.END);
+                wlp.x = dockSide == Gravity.START ? dp(4) : dp(4);
+                wlp.y = toY;
+                try {
+                    windowManager.updateViewLayout(panelRoot, wlp);
+                } catch (Throwable ignored) {}
+                panel.setAlpha(1f);
+                panel.setScaleX(1f);
+                panel.setScaleY(1f);
+                collapsed = true;
+                animating = false;
+                Log.i(TAG, "collapsed to edge side=" + dockSide);
+            }
+        });
+        an.start();
+    }
+
+    private void expandFromEdge(WindowManager.LayoutParams wlp) {
+        if (panelRoot == null || animating || !collapsed) return;
+        animating = true;
+        final int fromX = wlp.x;
+        final int fromY = wlp.y;
+        final int toX = dp(6);
+        final int toY = expandedY;
+
+        bubble.setVisibility(View.GONE);
+        panel.setVisibility(View.VISIBLE);
+        panel.setAlpha(0f);
+        panel.setScaleX(0.7f);
+        panel.setScaleY(0.7f);
+
+        ValueAnimator an = ValueAnimator.ofFloat(0f, 1f);
+        an.setDuration(280);
+        an.setInterpolator(new DecelerateInterpolator());
+        an.addUpdateListener(va -> {
+            float f = (float) va.getAnimatedValue();
+            wlp.gravity = Gravity.TOP | Gravity.START;
+            wlp.x = (int) (fromX + (toX - fromX) * f);
+            wlp.y = (int) (fromY + (toY - fromY) * f);
+            panel.setAlpha(f);
+            panel.setScaleX(0.7f + 0.3f * f);
+            panel.setScaleY(0.7f + 0.3f * f);
+            try {
+                windowManager.updateViewLayout(panelRoot, wlp);
+            } catch (Throwable ignored) {}
+        });
+        an.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                panel.setAlpha(1f);
+                panel.setScaleX(1f);
+                panel.setScaleY(1f);
+                collapsed = false;
+                animating = false;
+                Log.i(TAG, "expanded from edge");
+            }
+        });
+        an.start();
     }
 
     private void toggleFlow() {
@@ -203,7 +400,7 @@ public class FloatingWindowService extends Service {
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         String msg = sp.getString(KEY_MSG, null);
         if (msg == null || msg.trim().isEmpty()) {
-            msg = getString(R.string.default_dm_msg);
+            msg = getString(com.pixel.agent.R.string.default_dm_msg);
         }
         int target = sp.getInt(KEY_TARGET, 5);
         startFlow(msg.trim(), target);
@@ -257,21 +454,19 @@ public class FloatingWindowService extends Service {
         if (statusView == null) return;
         String cap = CaptureService.instance != null ? "截屏✓" : "截屏✗";
         String tap = TapService.instance != null ? "点击✓" : "点击✗";
+        String wx = TapService.isWechatForeground() ? "微信前台✓" : "微信前台✗";
         CharSequence cur = statusView.getText();
-        if (cur != null && (cur.toString().contains("进度") || cur.toString().contains("运行")
-                || cur.toString().contains("启动") || cur.toString().contains("完成")
-                || cur.toString().contains("点头像") || cur.toString().contains("关注")
-                || cur.toString().contains("搜索") || cur.toString().contains("文章")
-                || cur.toString().contains("私信") || cur.toString().contains("导航")
-                || cur.toString().contains("提交") || cur.toString().contains("状态"))) {
-            // 保留流程日志，只在启动前刷新服务状态
-            if (cur.toString().equals("待启动") || cur.toString().startsWith("缺少")
-                    || cur.toString().contains("服务")) {
-                statusView.setText(cap + " " + tap);
+        if (cur != null) {
+            String s = cur.toString();
+            if (s.contains("进度") || s.contains("运行") || s.contains("启动")
+                    || s.contains("完成") || s.contains("点头像") || s.contains("关注")
+                    || s.contains("搜索") || s.contains("文章") || s.contains("私信")
+                    || s.contains("导航") || s.contains("提交") || s.contains("状态")
+                    || s.contains("误入") || s.contains("恢复")) {
+                return;
             }
-            return;
         }
-        statusView.setText(cap + " " + tap);
+        statusView.setText(cap + " " + tap + " " + wx);
     }
 
     private void createChannel() {
@@ -300,7 +495,6 @@ public class FloatingWindowService extends Service {
         ui.post(() -> Toast.makeText(this, s, Toast.LENGTH_SHORT).show());
     }
 
-    /** 主界面写入话术/目标后刷新 */
     public void updatePrefs(String msg, int target) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString(KEY_MSG, msg)

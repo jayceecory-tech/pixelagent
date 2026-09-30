@@ -12,11 +12,15 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * 输入引擎: 无障碍 dispatchGesture 实现点击/滑动。
- * 不读取窗口内容（微信反自动化已将无障碍树清空，只用其注入手势）。
+ * 同时跟踪前台包名，供流程判断是否被误触到其它应用。
  */
 public class TapService extends AccessibilityService {
     private static final String TAG = "PixelAgent.Tap";
     public static volatile TapService instance;
+    /** 当前台包名（无障碍窗口事件） */
+    public static volatile String foregroundPackage;
+
+    public static final String PKG_WECHAT = "com.tencent.mm";
 
     @Override
     protected void onServiceConnected() {
@@ -28,7 +32,11 @@ public class TapService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            String pkg = String.valueOf(event.getPackageName());
+            CharSequence pkgCs = event.getPackageName();
+            String pkg = pkgCs != null ? pkgCs.toString() : null;
+            if (pkg != null && pkg.length() > 0) {
+                foregroundPackage = pkg;
+            }
             Log.d(TAG, "window: " + pkg + " " + event.getClassName());
         }
     }
@@ -43,17 +51,18 @@ public class TapService extends AccessibilityService {
         super.onDestroy();
     }
 
-    /** 点击。返回是否成功派发 */
+    public static boolean isWechatForeground() {
+        return PKG_WECHAT.equals(foregroundPackage);
+    }
+
     public boolean tap(int x, int y) {
         return dispatch(x, y, x, y, 60);
     }
 
-    /** 长按 (用于剪贴板粘贴菜单) */
     public boolean longPress(int x, int y, long holdMs) {
         return dispatch(x, y, x, y, (int) Math.max(200, holdMs));
     }
 
-    /** 滑动。duration ms */
     public boolean swipe(int x1, int y1, int x2, int y2, int duration) {
         return dispatch(x1, y1, x2, y2, duration);
     }
@@ -86,7 +95,6 @@ public class TapService extends AccessibilityService {
         }
     }
 
-    /** BACK键 */
     public boolean back() {
         if (instance == null) return false;
         return performGlobalAction(GLOBAL_ACTION_BACK);

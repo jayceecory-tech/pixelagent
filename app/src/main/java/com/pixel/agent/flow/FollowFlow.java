@@ -86,12 +86,15 @@ public class FollowFlow implements Runnable {
     }
 
     private boolean tap(PixelDetector.Btn b) {
+        if (b == null) return false;
+        if (!ensureWechatForeground(true)) return false;
         TapService tap = TapService.instance;
-        if (tap == null || b == null) return false;
+        if (tap == null) return false;
         return tap.tap(b.x, b.y);
     }
 
     private void tapXY(int x, int y) {
+        if (!ensureWechatForeground(true)) return;
         TapService tap = TapService.instance;
         if (tap != null) tap.tap(x, y);
     }
@@ -100,6 +103,60 @@ public class FollowFlow implements Runnable {
         TapService tap = TapService.instance;
         if (tap != null) tap.back();
         sleep(1200);
+    }
+
+    /** 当前前台是否微信 */
+    private boolean onWechat() {
+        return TapService.isWechatForeground();
+    }
+
+    /**
+     * 确保微信在前台。误触广告/分享/其它应用时强制拉回。
+     * @return true=可以安全点击
+     */
+    private boolean ensureWechatForeground(boolean logIfRecovered) {
+        if (TapService.instance == null) return false;
+        if (onWechat()) return true;
+        String pkg = TapService.foregroundPackage;
+        log("前台不是微信: " + pkg + ", 拉回微信");
+        openWechat();
+        sleep(2000);
+        // 仍不在微信: BACK 若干次再拉
+        for (int i = 0; i < 3 && !onWechat(); i++) {
+            back();
+            openWechat();
+            sleep(1500);
+        }
+        if (onWechat()) {
+            if (logIfRecovered) log("已回到微信前台");
+            return true;
+        }
+        log("仍无法回到微信, 暂停点击");
+        return false;
+    }
+
+    /** 页面疑似广告/分享/非微信业务页: 立即 BACK，避免乱点其它应用 */
+    private boolean looksLikeAdOrShare(PixelDetector.Page p) {
+        if (p == PixelDetector.Page.AD) return true;
+        if (p == PixelDetector.Page.HOME) return true;
+        if (p == PixelDetector.Page.UNKNOWN) return true;
+        if (p == PixelDetector.Page.SEARCH_INPUT || p == PixelDetector.Page.SEARCH_RESULTS) return false;
+        return false;
+    }
+
+    /** 周期检查前台，约每 8 秒做一次完整恢复 */
+    private int lastWechatCheckRound = 0;
+
+    private void periodicWechatGuard(int round) {
+        if (round - lastWechatCheckRound < 8) return;
+        lastWechatCheckRound = round;
+        if (TapService.instance == null) return;
+        if (onWechat()) {
+            log("前台检查: 微信 ✓");
+            return;
+        }
+        log("前台检查: 不是微信 (" + TapService.foregroundPackage + ")");
+        ensureWechatForeground(true);
     }
 
     private void backToComments(int maxBacks) {
@@ -209,9 +266,10 @@ public class FollowFlow implements Runnable {
             context.startActivity(it);
             log("打开微信");
         }
-        sleep(3000);
+        sleep(2500);
         log("tap=" + (TapService.instance != null)
                 + " capture=" + (CaptureService.instance != null)
+                + " fg=" + TapService.foregroundPackage
                 + " page=" + page());
     }
 
@@ -426,11 +484,22 @@ public class FollowFlow implements Runnable {
         }
 
         int idleRounds = 0;
+        int round = 0;
         while (running && done < target) {
             if (!ready()) {
                 log("截屏/无障碍服务断开, 停止");
                 break;
             }
+            round++;
+            periodicWechatGuard(round);
+
+            // 前台不是微信时禁止点击，只恢复
+            if (!onWechat()) {
+                ensureWechatForeground(true);
+                sleep(800);
+                continue;
+            }
+
             PixelDetector d = shot();
             if (d == null) {
                 sleep(500);
@@ -438,7 +507,17 @@ public class FollowFlow implements Runnable {
             }
             PixelDetector.Page p = d.pageKind();
             log("state=" + p + " done=" + done + "/" + target
-                    + " follow=" + successFollow + " dm=" + successDm);
+                    + " follow=" + successFollow + " dm=" + successDm
+                    + " fg=" + TapService.foregroundPackage);
+
+            // 广告/分享/未知: 只 BACK，不乱点
+            if (p == PixelDetector.Page.AD || p == PixelDetector.Page.UNKNOWN) {
+                log("疑似广告/分享/未知页, BACK恢复");
+                back();
+                sleep(1000);
+                ensureWechatForeground(true);
+                continue;
+            }
 
             switch (p) {
                 case SEARCH_INPUT:
@@ -495,11 +574,9 @@ public class FollowFlow implements Runnable {
                 default:
                     idleRounds++;
                     log("未知页 #" + idleRounds + " page=" + p);
-                    if (idleRounds > 6) {
-                        // 尝试恢复导航
-                        log("尝试恢复: 返回并重新搜索");
-                        back();
-                        sleep(1000);
+                    if (idleRounds > 4) {
+                        log("连续异常, 强制回微信并重新导航");
+                        ensureWechatForeground(true);
                         ensureWechatSearchPage();
                         typeSearchKeyword();
                         openArticleTabAndLatest();

@@ -258,12 +258,18 @@ public final class PixelDetector {
     // ---------- 绿色关注按钮 ----------
     public static class Btn { public int x, y; }
 
+    /**
+     * 找名片页大块绿色关注按钮。
+     * 排除右上角悬浮窗等 overlay：中心 x 不得贴右边缘，且宽度/面积要像名片大按钮。
+     */
     public Btn findGreenButton() {
         int ylo = (int) (h * 0.16), yhi = (int) (h * 0.70);
+        // 悬浮窗/顶栏绿钮常在 x>75% 屏宽，排除
+        int xMax = (int) (w * 0.88);
         int[] rowGreen = new int[h];
         for (int y = ylo; y < yhi && y < h; y++) {
             int c = 0;
-            for (int x = 0; x < w; x++)
+            for (int x = 0; x < xMax; x++)
                 if (isGreen(y * w + x)) c++;
             rowGreen[y] = c;
         }
@@ -273,7 +279,7 @@ public final class PixelDetector {
             if (on && start < 0) start = y;
             else if (!on && start >= 0) {
                 if (y - start >= 80) {
-                    Btn btn = greenSegCenter(start, y);
+                    Btn btn = greenSegCenter(start, y, xMax);
                     if (btn != null) return btn;
                 }
                 start = -1;
@@ -282,10 +288,10 @@ public final class PixelDetector {
         return null;
     }
 
-    private Btn greenSegCenter(int y1, int y2) {
+    private Btn greenSegCenter(int y1, int y2, int xMax) {
         int x1 = -1, x2 = -1, count = 0;
         for (int y = y1; y < y2 && y < h; y++) {
-            for (int x = 0; x < w; x++) {
+            for (int x = 0; x < xMax && x < w; x++) {
                 if (isGreen(y * w + x)) {
                     if (x1 < 0 || x < x1) x1 = x;
                     if (x > x2) x2 = x;
@@ -294,8 +300,11 @@ public final class PixelDetector {
             }
         }
         if (count < 15000 || x2 - x1 < 200) return null;
+        int cx = (x1 + x2) / 2;
+        // 中心不能贴最右（悬浮窗/顶栏）
+        if (cx > w * 0.80) return null;
         Btn b = new Btn();
-        b.x = (x1 + x2) / 2;
+        b.x = cx;
         b.y = (y1 + y2) / 2;
         return b;
     }
@@ -434,7 +443,18 @@ public final class PixelDetector {
                 if (isColored(y * w + x)) c++;
             rowCount = Math.max(rowCount, c);
         }
-        if (rowCount > (int) (w * 0.086)) return; // 过宽=广告图/封面
+        // 行宽: 评论头像约 70-108px；过宽多为广告/封面
+        if (rowCount > (int) (w * 0.086)) return;
+        // 右侧应有评论文字（深色像素），排除贴边广告图
+        int textX1 = x2 + (int) (w * 0.02);
+        int textX2 = Math.min(w, x2 + (int) (w * 0.55));
+        int textDark = 0;
+        for (int y = y1; y < y2; y++)
+            for (int x = textX1; x < textX2; x++) {
+                int i = y * w + x;
+                if (r(i) < 120 && g(i) < 120 && b(i) < 120) textDark++;
+            }
+        if (textDark < 80) return;
         long sx = 0;
         int n = 0;
         for (int y = y1; y < y2; y++)

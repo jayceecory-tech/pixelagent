@@ -20,12 +20,12 @@
 
 | 项目 | 状态 |
 |------|------|
-| 版本 | **0.8**（`versionCode=8`） |
+| 版本 | **0.13**（`versionCode=13`） |
 | 截屏引擎 | 已修 Android 14 `MediaProjection.Callback` 必需注册 |
 | 像素缓冲 | 已修 `rowStride` 导致的 `ArrayIndexOutOfBounds` |
 | 中文输入 | 优先 `ADB_INPUT_B64`；已去掉无焦点时的 `ADB_CLEAR_TEXT`（会弄崩 AdbIME） |
 | 页面识别 | 评论/名片/私信/搜索/文章/首页 分类；搜索条与 DM 判定已收紧 |
-| 悬浮窗 | **0.8 新增**：微信前台可点开始，降低 vivo 冻结概率 |
+| 悬浮窗 | **0.12+**：左上角蓝色控件，避免误检关注绿钮/遮挡点击 |
 | 自动化完整链路 | **调试中**（搜文→评论→关注→私信 坐标与状态机仍在真机校准） |
 
 调试机：vivo，物理分辨率 **1260×2800**。坐标按该分辨率实测。
@@ -36,26 +36,35 @@
 
 | 文件 | 说明 |
 |------|------|
-| `app-debug-0.8.apk` | PixelAgent 当前调试包 |
-| `app-debug-0.2.apk` … `0.7.apk` | 历史调试包 |
+| `app-debug-0.13.apk` | PixelAgent 当前调试包 |
+| `app-debug-0.2.apk` … `0.12.apk` | 历史调试包 |
 | `MinisApp-1.14-arm64-v8a.apk` | 配套安装包（包名 `com.openminis.app`） |
+
+### 0.9–0.13 调整摘要
+
+| 版本 | 说明 |
+|------|------|
+| 0.9–0.12 | 悬浮窗改色/左上角；绿钮检测排除右侧 overlay；文章/评论页不再强行回搜索 |
+| 0.13 | 评论头像要求右侧有文字；误入聊天/小程序立即 BACK |
+
+> 调试机：vivo 1260×2800。中文注入需临时用 ADB Keyboard。
 
 ## 仓库内文件
 
 ```
 pixelagent/
 ├── README.md
-├── app-debug-0.8.apk          # 当前调试包
-├── app-debug-0.2.apk … 0.7.apk # 历史包（可选保留）
+├── app-debug-0.13.apk          # 当前调试包
+├── app-debug-0.2.apk … 0.12.apk
 ├── app/
 │   └── src/main/java/com/pixel/agent/
-│       ├── MainActivity.java          # 主界面：截屏/无障碍/悬浮窗
-│       ├── TestRunner.java            # 截屏+检测自检
-│       ├── detector/PixelDetector.java# 像素页面/按钮识别
-│       ├── engine/CaptureService.java # MediaProjection 截屏
-│       ├── engine/TapService.java     # 无障碍手势点击
-│       ├── flow/FollowFlow.java       # 全自动互关状态机
-│       └── ui/FloatingWindowService.java # 悬浮窗控制面板
+│       ├── MainActivity.java
+│       ├── TestRunner.java
+│       ├── detector/PixelDetector.java
+│       ├── engine/CaptureService.java
+│       ├── engine/TapService.java
+│       ├── flow/FollowFlow.java
+│       └── ui/FloatingWindowService.java
 ```
 
 ---

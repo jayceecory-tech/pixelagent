@@ -217,7 +217,7 @@ public class FollowFlow implements Runnable {
 
     private void ensureWechatSearchPage() {
         openWechat();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 10; i++) {
             if (TapService.instance == null || CaptureService.instance == null) {
                 log("服务断开 tap=" + (TapService.instance != null)
                         + " cap=" + (CaptureService.instance != null) + ", 停止");
@@ -230,18 +230,29 @@ public class FollowFlow implements Runnable {
             if (p == PixelDetector.Page.SEARCH_INPUT || p == PixelDetector.Page.SEARCH_RESULTS) {
                 return;
             }
-            // 强制回到微信
-            openWechat();
-            if (p == PixelDetector.Page.HOME || p == PixelDetector.Page.UNKNOWN
+            // 停在名片/私信/评论等页: 先返回，再进搜索
+            if (p == PixelDetector.Page.CARD_UNFOLLOWED
+                    || p == PixelDetector.Page.CARD_FOLLOWED
+                    || p == PixelDetector.Page.DM
+                    || p == PixelDetector.Page.COMMENTS
                     || p == PixelDetector.Page.ARTICLE) {
-                int w = screenW();
-                tapXY((int) (w * 0.833), 207);
-                sleep(2200);
+                log("当前页非搜索, BACK恢复: " + p);
+                back();
+                sleep(1400);
                 continue;
             }
-            back();
-            sleep(1200);
+            // 强制回到微信首页后再点搜索
+            openWechat();
+            int w = screenW();
+            tapXY((int) (w * 0.833), 207);
+            sleep(2200);
+            PixelDetector.Page p2 = page();
+            log("点搜索后 page=" + p2);
+            if (p2 == PixelDetector.Page.SEARCH_INPUT || p2 == PixelDetector.Page.SEARCH_RESULTS) {
+                return;
+            }
         }
+        log("导航结束 page=" + page() + "（可能仍不在搜索页）");
     }
 
     private boolean typeSearchKeyword() {
@@ -285,38 +296,44 @@ public class FollowFlow implements Runnable {
     }
 
     private void openNextArticle() {
-        // 文章列表标题行实测: 首条约 y735-780, 次条 y1132 等
-        // 优先扫正文区找宽文本行
-        PixelDetector d = shot();
         int w = screenW(), h = screenH();
+        // 实测文章列表标题约在 y1250 / 1710 / 2100 / 2570
+        int[] candidates = {1250, 1710, 2100, 2570, 900, 756};
         int tapY;
-        if (articleTaps == 0) {
-            tapY = 756;
-        } else if (articleTaps == 1) {
-            tapY = 1155;
-        } else if (articleTaps == 2) {
-            tapY = 1628;
-        } else if (articleTaps == 3) {
-            tapY = 2100;
+        if (articleTaps < candidates.length) {
+            tapY = candidates[articleTaps];
         } else {
-            tapY = 2500;
-            // 滑动加载更多
             TapService tap = TapService.instance;
             if (tap != null) {
                 tap.swipe(w / 2, (int) (h * 0.75), w / 2, (int) (h * 0.35), 400);
-                sleep(1500);
-                tapY = 900;
+                sleep(1600);
             }
+            tapY = 1250;
         }
         articleTaps++;
         log("打开文章 #" + articleTaps + " y=" + tapY);
         tapXY(w / 2, tapY);
-        sleep(3000);
-        // 若仍是列表, 试再点一次第一可见标题
+        sleep(3200);
         PixelDetector.Page p = page();
-        if (p == PixelDetector.Page.SEARCH_RESULTS || looksLikeTabbedResults()) {
-            tapXY(w / 2, 756);
-            sleep(2800);
+        // 仍未离开列表: 再试其它标题行
+        if (p == PixelDetector.Page.SEARCH_RESULTS) {
+            for (int y : new int[]{1250, 1710, 2100, 2570}) {
+                if (y == tapY) continue;
+                log("列表未变, 试 y=" + y);
+                tapXY(w / 2, y);
+                sleep(2800);
+                p = page();
+                if (p != PixelDetector.Page.SEARCH_RESULTS) break;
+            }
+        }
+        // 误入名片/私信/联系人: 返回
+        if (p == PixelDetector.Page.CARD_UNFOLLOWED
+                || p == PixelDetector.Page.CARD_FOLLOWED
+                || p == PixelDetector.Page.DM
+                || p == PixelDetector.Page.HOME) {
+            log("误入 " + p + ", BACK");
+            back();
+            sleep(1500);
             p = page();
         }
         log("文章打开后 page=" + p);
@@ -325,32 +342,43 @@ public class FollowFlow implements Runnable {
     private void tryEnterCommentsFromArticle() {
         log("文章页, 尝试进评论区 page=" + page());
         int w = screenW(), h = screenH();
-        // 底部栏候选: 实测绿色图标 x485-631 y2673-2740
+        TapService tap = TapService.instance;
+        // 先下滑找留言区/头像，再试底部图标
+        for (int s = 0; s < 4; s++) {
+            if (tap == null) break;
+            tap.swipe(w / 2, (int) (h * 0.72), w / 2, (int) (h * 0.28), 400);
+            sleep(1800);
+            PixelDetector d = shot();
+            if (d != null && !d.findAvatars().isEmpty()) {
+                log("下滑后发现头像, 进入评论逻辑");
+                return;
+            }
+            PixelDetector.Page p = page();
+            log("下滑#" + (s + 1) + " page=" + p);
+            if (p == PixelDetector.Page.COMMENTS) return;
+        }
+        // 底部栏候选（避开悬浮窗，优先中下部）
         int[][] candidates = {
-                {550, 2700}, {480, 2700}, {630, 2700},
-                {350, 2700}, {720, 2700}, {250, 2700},
-                {(int) (w * 0.45), (int) (h * 0.965)}
+                {630, 2680}, {480, 2680}, {780, 2680},
+                {630, 2720}, {350, 2680}, {900, 2680}
         };
         for (int[] c : candidates) {
             tapXY(c[0], c[1]);
             sleep(2000);
+            PixelDetector d = shot();
+            if (d != null && !d.findAvatars().isEmpty()) {
+                log("底部入口发现头像 (" + c[0] + "," + c[1] + ")");
+                return;
+            }
             PixelDetector.Page p = page();
             log("评论入口尝试 (" + c[0] + "," + c[1] + ") -> " + p);
             if (p == PixelDetector.Page.COMMENTS) return;
-            if (p == PixelDetector.Page.CARD_UNFOLLOWED || p == PixelDetector.Page.DM) {
-                // 误点到名片/私信, 返回
+            if (p == PixelDetector.Page.CARD_UNFOLLOWED
+                    || p == PixelDetector.Page.CARD_FOLLOWED
+                    || p == PixelDetector.Page.DM) {
                 back();
                 sleep(1000);
             }
-        }
-        // 文章内下滑找"留言"区
-        TapService tap = TapService.instance;
-        if (tap != null) {
-            tap.swipe(w / 2, (int) (h * 0.70), w / 2, (int) (h * 0.30), 400);
-            sleep(2000);
-            PixelDetector.Page p = page();
-            log("下滑后 page=" + p);
-            if (p == PixelDetector.Page.COMMENTS) return;
         }
     }
 
@@ -374,13 +402,28 @@ public class FollowFlow implements Runnable {
         log("全自动流程启动: 目标 " + target + " 人");
         openWechat();
 
-        // 初始导航到搜索
-        ensureWechatSearchPage();
-        if (!typeSearchKeyword()) {
-            log("搜索失败, 仍尝试继续");
+        PixelDetector.Page p0 = page();
+        log("启动时页面: " + p0);
+        // 已在文章/评论/名片/私信: 直接进入处理，不要强行回搜索
+        if (p0 == PixelDetector.Page.COMMENTS
+                || p0 == PixelDetector.Page.CARD_UNFOLLOWED
+                || p0 == PixelDetector.Page.CARD_FOLLOWED
+                || p0 == PixelDetector.Page.DM
+                || p0 == PixelDetector.Page.ARTICLE) {
+            log("当前已在业务页, 跳过搜索导航");
+        } else if (p0 == PixelDetector.Page.SEARCH_RESULTS
+                || p0 == PixelDetector.Page.SEARCH_INPUT) {
+            log("已在搜索页, 直接开文章");
+            openArticleTabAndLatest();
+            openNextArticle();
+        } else {
+            ensureWechatSearchPage();
+            if (!typeSearchKeyword()) {
+                log("搜索失败, 仍尝试继续");
+            }
+            openArticleTabAndLatest();
+            openNextArticle();
         }
-        openArticleTabAndLatest();
-        openNextArticle();
 
         int idleRounds = 0;
         while (running && done < target) {
@@ -484,6 +527,7 @@ public class FollowFlow implements Runnable {
             log("本屏无头像");
             return false;
         }
+        log("发现候选头像 " + avatars.size() + " 个");
         for (int[] av : avatars) {
             int y = av[1];
             boolean seen = false;
@@ -498,7 +542,7 @@ public class FollowFlow implements Runnable {
             log(String.format("点头像 (%d,%d) (%d/%d)",
                     av[0], y, done + 1, target));
             tapXY(av[0], y);
-            sleep(3200);
+            sleep(3500);
             PixelDetector.Page after = page();
             log("点头像后 page=" + after);
             if (after == PixelDetector.Page.CARD_UNFOLLOWED
@@ -506,7 +550,16 @@ public class FollowFlow implements Runnable {
                     || after == PixelDetector.Page.DM) {
                 return true;
             }
-            // 未打开名片: 继续试下一个头像
+            // 误入聊天/小程序/广告: 立即返回
+            if (after == PixelDetector.Page.UNKNOWN || after == PixelDetector.Page.HOME
+                    || after == PixelDetector.Page.SEARCH_INPUT
+                    || after == PixelDetector.Page.SEARCH_RESULTS) {
+                log("误入 " + after + ", BACK");
+                back();
+                sleep(1500);
+                continue;
+            }
+            // 仍在文章/评论: 可能点偏，试下一个
             log("名片未打开, 试下一个头像");
         }
         return false;

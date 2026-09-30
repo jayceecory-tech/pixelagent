@@ -145,7 +145,8 @@ public class FloatingWindowService extends Service {
 
         startBtn = new Button(this);
         startBtn.setText("开始");
-        startBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        // 不能用微信关注绿 #07C160，否则像素检测会当成名片关注钮
+        startBtn.setBackgroundColor(Color.parseColor("#1565C0"));
         startBtn.setTextColor(Color.WHITE);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
         lp.rightMargin = dp(6);
@@ -155,7 +156,7 @@ public class FloatingWindowService extends Service {
 
         Button stopBtn = new Button(this);
         stopBtn.setText("停止");
-        stopBtn.setBackgroundColor(Color.parseColor("#E53935"));
+        stopBtn.setBackgroundColor(Color.parseColor("#C62828"));
         stopBtn.setTextColor(Color.WHITE);
         stopBtn.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1f));
         stopBtn.setOnClickListener(v -> {
@@ -173,9 +174,11 @@ public class FloatingWindowService extends Service {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 type, flags, PixelFormat.TRANSLUCENT);
-        wlp.gravity = Gravity.TOP | Gravity.END;
-        wlp.x = dp(12);
-        wlp.y = dp(180);
+        // 放在左上角状态栏下方，避免盖住微信列表/底部按钮
+        // 注意: dp 在 560dpi 下约 ×3.5，y 用很小的 dp 值
+        wlp.gravity = Gravity.TOP | Gravity.START;
+        wlp.x = dp(6);
+        wlp.y = dp(4); // ≈14px @560dpi，紧贴状态栏下沿
 
         windowManager.addView(root, wlp);
         floatView = root;

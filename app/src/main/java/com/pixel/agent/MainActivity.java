@@ -21,7 +21,6 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_OVERLAY = 101;
     private static final int TARGET = 5;
 
-    /** 常用系统/厂商输入法（优先恢复） */
     private static final String[] PREF_IME_CANDIDATES = {
             "com.sohu.inputmethod.sogou.vivo/.SogouIME",
             "com.sohu.inputmethod.sogou/.SogouIME",
@@ -31,7 +30,7 @@ public class MainActivity extends AppCompatActivity {
     };
 
     private TextView statusText, logText;
-    private EditText editMsg;
+    private EditText editMsg, editComment;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,7 +40,9 @@ public class MainActivity extends AppCompatActivity {
         statusText = findViewById(R.id.statusText);
         logText = findViewById(R.id.logText);
         editMsg = findViewById(R.id.editMsg);
+        editComment = findViewById(R.id.editComment);
         editMsg.setText(getString(R.string.default_dm_msg));
+        editComment.setText(commentTemplate());
 
         findViewById(R.id.btnCapture).setOnClickListener(v -> startCapture());
         findViewById(R.id.btnTest).setOnClickListener(v ->
@@ -56,13 +57,37 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnRestoreIme).setOnClickListener(v -> restoreSystemIme());
     }
 
-    /** 恢复到搜狗/系统输入法（调试时可能被切到 ADB Keyboard） */
+    private String commentTemplate() {
+        return getString(R.string.default_comment_1) + "|"
+                + getString(R.string.default_comment_2) + "|"
+                + getString(R.string.default_comment_3);
+    }
+
+    private String[] parseComments(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return new String[]{
+                    getString(R.string.default_comment_1),
+                    getString(R.string.default_comment_2),
+                    getString(R.string.default_comment_3),
+            };
+        }
+        String[] parts = raw.split("\\|");
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (String p : parts) {
+            String t = p.trim();
+            if (!t.isEmpty()) list.add(t);
+        }
+        if (list.isEmpty()) {
+            list.add(getString(R.string.default_comment_1));
+        }
+        return list.toArray(new String[0]);
+    }
+
     private void restoreSystemIme() {
         String cur = Settings.Secure.getString(
                 getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
         String target = pickSystemIme(cur);
         if (target == null) {
-            // 兜底: 打开输入法设置让用户手动选
             toast("未找到搜狗/系统输入法，请手动选择");
             statusText.setText("状态: 请到设置切换输入法");
             try {
@@ -85,11 +110,9 @@ public class MainActivity extends AppCompatActivity {
         logText.append("恢复输入法: " + (now != null ? now : "null") + "\n");
     }
 
-    /** 在候选列表里挑一个当前已启用、且不是 ADBKeyboard 的输入法 */
     private String pickSystemIme(String current) {
         if (current != null && !current.contains("adbkeyboard")
                 && !current.contains("ADB")) {
-            // 已经不是 ADB，优先保持/切到搜狗候选
             for (String c : PREF_IME_CANDIDATES) {
                 if (c.equals(current)) return c;
             }
@@ -99,14 +122,12 @@ public class MainActivity extends AppCompatActivity {
         for (String c : PREF_IME_CANDIDATES) {
             if (enabled != null && enabled.contains(c)) return c;
         }
-        // enabled 列表格式可能被分号截断，再宽松匹配包名
         if (enabled != null) {
             for (String c : PREF_IME_CANDIDATES) {
                 String pkg = c.substring(0, c.indexOf('/'));
                 if (enabled.contains(pkg)) return c;
             }
         }
-        // 最后: 任意非 ADB 的已启用输入法
         if (enabled != null) {
             for (String part : enabled.split(":")) {
                 if (!part.contains("adbkeyboard") && part.contains("/")) return part;
@@ -205,19 +226,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showFloat() {
-        FloatingWindowService.updatePrefsStatic(this,
-                editMsg.getText() == null ? "" : editMsg.getText().toString(),
-                TARGET);
+        String msg = editMsg.getText() == null ? "" : editMsg.getText().toString();
+        String comments = editComment.getText() == null ? "" : editComment.getText().toString();
+        FloatingWindowService.updatePrefsStatic(this, msg.trim(), TARGET, comments);
         FloatingWindowService.show(this);
     }
 
     private void savePrefs() {
         String msg = editMsg.getText() == null ? "" : editMsg.getText().toString();
+        String comments = editComment.getText() == null ? "" : editComment.getText().toString();
         getSharedPreferences("pixel_agent", MODE_PRIVATE).edit()
                 .putString("dm_msg", msg.trim())
+                .putString("comment_msgs", comments.trim())
                 .putInt("target", TARGET)
                 .apply();
-        FloatingWindowService.updatePrefsStatic(this, msg, TARGET);
+        FloatingWindowService.updatePrefsStatic(this, msg, TARGET, comments);
     }
 
     private void toast(String s) {

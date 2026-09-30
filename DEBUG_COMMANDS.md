@@ -8,7 +8,7 @@
 ## 1. 安装最新 APK
 
 ```bash
-adb -s $SER push app-debug-0.17.apk /data/local/tmp/agent.apk
+adb -s $SER push app-debug-0.18.apk /data/local/tmp/agent.apk
 adb -s $SER shell pm install -r -t /data/local/tmp/agent.apk
 # vivo 会弹「安全守护」确认框：
 adb -s $SER shell input tap 380 2449   # 勾选「已了解风险」
@@ -113,7 +113,7 @@ adb -s $SER install -r -t MinisApp-1.14-arm64-v8a.apk
 
 ```bash
 export SER=10AF3J2PPA0021N
-./scripts/debug-adb.sh install ./app-debug-0.17.apk
+./scripts/debug-adb.sh install ./app-debug-0.18.apk
 ./scripts/debug-adb.sh setup
 ./scripts/debug-adb.sh capture
 ./scripts/debug-adb.sh float

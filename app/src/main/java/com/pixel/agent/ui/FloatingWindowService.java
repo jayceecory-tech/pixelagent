@@ -48,6 +48,8 @@ public class FloatingWindowService extends Service {
     private static final String PREFS = "pixel_agent";
     private static final String KEY_MSG = "dm_msg";
     private static final String KEY_TARGET = "target";
+    private static final String KEY_COMMENTS = "comment_msgs";
+    private static final long AUTO_HIDE_MS = 12_000L;
 
     public static volatile FloatingWindowService instance;
 
@@ -61,12 +63,13 @@ public class FloatingWindowService extends Service {
     private FollowFlow flow;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Runnable statusTick;
+    private Runnable autoHideTick;
 
     private boolean collapsed = false;
     private boolean animating = false;
-    private int dockSide = Gravity.START; // START=左, END=右
-    /** 在 onCreate 里赋值，不能在字段初始化时调 dp()（Service 尚未 attach） */
+    private int dockSide = Gravity.START;
     private int expandedY = 4;
+    private long lastInteractMs;
 
     public static void show(Context ctx) {
         Intent i = new Intent(ctx, FloatingWindowService.class);
@@ -85,7 +88,7 @@ public class FloatingWindowService extends Service {
     public void onCreate() {
         super.onCreate();
         instance = this;
-        expandedY = dp(4);
+        expandedY = dp(6);
         createChannel();
         startForeground(2001, buildNotification("PixelAgent 悬浮控制"));
         addOverlay();
@@ -96,7 +99,22 @@ public class FloatingWindowService extends Service {
                 ui.postDelayed(this, 1000);
             }
         };
+        autoHideTick = new Runnable() {
+            @Override
+            public void run() {
+                if (!collapsed && !animating
+                        && (System.currentTimeMillis() - lastInteractMs) > AUTO_HIDE_MS) {
+                    // 流程运行中不自动收起，避免误操作
+                    if (flow == null || !flow.isRunning()) {
+                        collapseToEdge();
+                    }
+                }
+                ui.postDelayed(this, 3000);
+            }
+        };
         ui.post(statusTick);
+        ui.post(autoHideTick);
+        lastInteractMs = System.currentTimeMillis();
         Log.i(TAG, "float window created");
     }
 
@@ -116,6 +134,7 @@ public class FloatingWindowService extends Service {
     @Override
     public void onDestroy() {
         ui.removeCallbacks(statusTick);
+        ui.removeCallbacks(autoHideTick);
         stopFlow();
         if (panelRoot != null) {
             try {
@@ -125,6 +144,10 @@ public class FloatingWindowService extends Service {
         }
         if (instance == this) instance = null;
         super.onDestroy();
+    }
+
+    private void touch() {
+        lastInteractMs = System.currentTimeMillis();
     }
 
     private void addOverlay() {
@@ -164,24 +187,26 @@ public class FloatingWindowService extends Service {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.parseColor("#CC1B1B1B"));
-        bg.setCornerRadius(dp(12));
+        bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setColor(Color.parseColor("#F21565C0"));
+        bg.setCornerRadius(dp(14));
         root.setBackground(bg);
-        int pad = dp(10);
+        int pad = dp(12);
         root.setPadding(pad, pad, pad, pad);
+        root.setMinimumWidth(dp(280));
 
         TextView title = new TextView(this);
-        title.setText("PixelAgent");
+        title.setText("PixelAgent  控制台");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
 
         statusView = new TextView(this);
-        statusView.setText("待启动");
-        statusView.setTextColor(Color.parseColor("#B0BEC5"));
+        statusView.setText("待启动 · 点「开始」跑互关");
+        statusView.setTextColor(Color.parseColor("#B3E5FC"));
         statusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        statusView.setPadding(0, dp(4), 0, dp(6));
+        statusView.setPadding(0, dp(4), 0, dp(8));
         root.addView(statusView);
 
         LinearLayout row = new LinearLayout(this);
@@ -189,20 +214,25 @@ public class FloatingWindowService extends Service {
 
         startBtn = new Button(this);
         startBtn.setText("开始");
-        startBtn.setBackgroundColor(Color.parseColor("#1565C0"));
-        startBtn.setTextColor(Color.WHITE);
-        LinearLayout.LayoutParams lpStart = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        startBtn.setBackgroundColor(Color.parseColor("#26C6DA"));
+        startBtn.setTextColor(Color.parseColor("#00334D"));
+        startBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams lpStart = new LinearLayout.LayoutParams(0, dp(42), 1f);
         lpStart.rightMargin = dp(6);
         startBtn.setLayoutParams(lpStart);
-        startBtn.setOnClickListener(v -> toggleFlow());
+        startBtn.setOnClickListener(v -> {
+            touch();
+            toggleFlow();
+        });
         row.addView(startBtn);
 
         Button stopBtn = new Button(this);
         stopBtn.setText("停止");
-        stopBtn.setBackgroundColor(Color.parseColor("#C62828"));
+        stopBtn.setBackgroundColor(Color.parseColor("#EF5350"));
         stopBtn.setTextColor(Color.WHITE);
-        stopBtn.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1f));
+        stopBtn.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
         stopBtn.setOnClickListener(v -> {
+            touch();
             stopFlow();
             toast("已请求停止");
         });
@@ -211,13 +241,24 @@ public class FloatingWindowService extends Service {
         root.addView(row);
 
         minBtn = new Button(this);
-        minBtn.setText("收起");
-        minBtn.setBackgroundColor(Color.parseColor("#455A64"));
+        minBtn.setText("收起到侧边  ·  拖到左右边缘也可");
+        minBtn.setBackgroundColor(Color.parseColor("#37474F"));
         minBtn.setTextColor(Color.WHITE);
+        minBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         minBtn.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
-        minBtn.setOnClickListener(v -> collapseToEdge());
+        minBtn.setOnClickListener(v -> {
+            touch();
+            collapseToEdge();
+        });
         root.addView(minBtn);
+
+        TextView tip = new TextView(this);
+        tip.setText("支持评论区自动留言：互关，一起努力～");
+        tip.setTextColor(Color.parseColor("#90CAF9"));
+        tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tip.setPadding(0, dp(6), 0, 0);
+        root.addView(tip);
 
         return root;
     }
@@ -226,14 +267,15 @@ public class FloatingWindowService extends Service {
         TextView b = new TextView(this);
         b.setText("P");
         b.setTextColor(Color.WHITE);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setGravity(Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
         bg.setColor(Color.parseColor("#1565C0"));
+        bg.setStroke(dp(2), Color.parseColor("#42A5F5"));
         b.setBackground(bg);
-        int sz = dp(48);
+        int sz = dp(52);
         b.setLayoutParams(new FrameLayout.LayoutParams(sz, sz));
         return b;
     }
@@ -245,6 +287,7 @@ public class FloatingWindowService extends Service {
         final int[] origX = {0};
         final int[] origY = {0};
         target.setOnTouchListener((v, event) -> {
+            touch();
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startX[0] = event.getRawX();
@@ -265,7 +308,6 @@ public class FloatingWindowService extends Service {
                 case MotionEvent.ACTION_CANCEL:
                     float totalX = event.getRawX() - startX[0];
                     float totalY = event.getRawY() - startY[0];
-                    // 小位移视为点击，交给子按钮；大幅位移判定为拖到边
                     if (Math.abs(totalX) > dp(40) || Math.abs(totalY) > dp(40)) {
                         int screenW = getResources().getDisplayMetrics().widthPixels;
                         if (wlp.x < screenW / 3f) {
@@ -275,7 +317,6 @@ public class FloatingWindowService extends Service {
                             dockSide = Gravity.END;
                             collapseToEdge();
                         } else {
-                            // 落回左上
                             wlp.x = dp(6);
                             wlp.y = expandedY;
                             try {
@@ -290,29 +331,39 @@ public class FloatingWindowService extends Service {
     }
 
     private void installBubbleTap(TextView b, WindowManager.LayoutParams wlp) {
-        b.setOnClickListener(v -> expandFromEdge(wlp));
+        b.setOnClickListener(v -> {
+            touch();
+            expandFromEdge(wlp);
+        });
+        // 长按也可展开
+        b.setOnLongClickListener(v -> {
+            touch();
+            expandFromEdge(wlp);
+            return true;
+        });
     }
 
     private void collapseToEdge() {
         if (panelRoot == null || animating || collapsed) return;
+        touch();
         final WindowManager.LayoutParams wlp = (WindowManager.LayoutParams) panelRoot.getLayoutParams();
         int screenW = getResources().getDisplayMetrics().widthPixels;
         final int fromX = wlp.x;
         final int fromY = wlp.y;
-        final int toX = dockSide == Gravity.START ? -dp(10) : screenW - dp(40);
-        final int toY = dp(120);
+        final int toX = dockSide == Gravity.START ? -dp(8) : screenW - dp(44);
+        final int toY = dp(160);
 
         animating = true;
         ValueAnimator an = ValueAnimator.ofFloat(0f, 1f);
-        an.setDuration(280);
+        an.setDuration(320);
         an.setInterpolator(new AccelerateInterpolator());
         an.addUpdateListener(va -> {
             float f = (float) va.getAnimatedValue();
             wlp.x = (int) (fromX + (toX - fromX) * f);
             wlp.y = (int) (fromY + (toY - fromY) * f);
-            panel.setAlpha(1f - f * 0.85f);
-            panel.setScaleX(1f - f * 0.35f);
-            panel.setScaleY(1f - f * 0.35f);
+            panel.setAlpha(1f - f * 0.9f);
+            panel.setScaleX(1f - f * 0.4f);
+            panel.setScaleY(1f - f * 0.4f);
             try {
                 windowManager.updateViewLayout(panelRoot, wlp);
             } catch (Throwable ignored) {}
@@ -322,9 +373,8 @@ public class FloatingWindowService extends Service {
             public void onAnimationEnd(Animator animation) {
                 panel.setVisibility(View.GONE);
                 bubble.setVisibility(View.VISIBLE);
-                // 气泡贴边
                 wlp.gravity = Gravity.TOP | (dockSide == Gravity.START ? Gravity.START : Gravity.END);
-                wlp.x = dockSide == Gravity.START ? dp(4) : dp(4);
+                wlp.x = dp(6);
                 wlp.y = toY;
                 try {
                     windowManager.updateViewLayout(panelRoot, wlp);
@@ -351,11 +401,11 @@ public class FloatingWindowService extends Service {
         bubble.setVisibility(View.GONE);
         panel.setVisibility(View.VISIBLE);
         panel.setAlpha(0f);
-        panel.setScaleX(0.7f);
-        panel.setScaleY(0.7f);
+        panel.setScaleX(0.65f);
+        panel.setScaleY(0.65f);
 
         ValueAnimator an = ValueAnimator.ofFloat(0f, 1f);
-        an.setDuration(280);
+        an.setDuration(320);
         an.setInterpolator(new DecelerateInterpolator());
         an.addUpdateListener(va -> {
             float f = (float) va.getAnimatedValue();
@@ -363,8 +413,8 @@ public class FloatingWindowService extends Service {
             wlp.x = (int) (fromX + (toX - fromX) * f);
             wlp.y = (int) (fromY + (toY - fromY) * f);
             panel.setAlpha(f);
-            panel.setScaleX(0.7f + 0.3f * f);
-            panel.setScaleY(0.7f + 0.3f * f);
+            panel.setScaleX(0.65f + 0.35f * f);
+            panel.setScaleY(0.65f + 0.35f * f);
             try {
                 windowManager.updateViewLayout(panelRoot, wlp);
             } catch (Throwable ignored) {}
@@ -377,6 +427,7 @@ public class FloatingWindowService extends Service {
                 panel.setScaleY(1f);
                 collapsed = false;
                 animating = false;
+                touch();
                 Log.i(TAG, "expanded from edge");
             }
         });
@@ -384,6 +435,7 @@ public class FloatingWindowService extends Service {
     }
 
     private void toggleFlow() {
+        touch();
         if (flow != null && flow.isRunning()) {
             stopFlow();
             toast("已停止");
@@ -404,15 +456,30 @@ public class FloatingWindowService extends Service {
         if (msg == null || msg.trim().isEmpty()) {
             msg = getString(com.pixel.agent.R.string.default_dm_msg);
         }
+        String commentsRaw = sp.getString(KEY_COMMENTS, null);
+        if (commentsRaw == null || commentsRaw.trim().isEmpty()) {
+            commentsRaw = getString(com.pixel.agent.R.string.default_comment_1) + "|"
+                    + getString(com.pixel.agent.R.string.default_comment_2) + "|"
+                    + getString(com.pixel.agent.R.string.default_comment_3);
+        }
+        String[] comments = commentsRaw.split("\\|");
         int target = sp.getInt(KEY_TARGET, 5);
-        startFlow(msg.trim(), target);
-        toast("已从悬浮窗启动");
+        startFlow(msg.trim(), target, comments);
+        toast("已从悬浮窗启动（含评论留言）");
     }
 
-    public void startFlow(String msg, int target) {
+    public void startFlow(String msg, int target, String[] comments) {
         stopFlow();
         String[] msgs = {msg};
-        flow = new FollowFlow(getApplicationContext(), msgs, target, new FollowFlow.Listener() {
+        if (comments == null || comments.length == 0) {
+            comments = new String[]{
+                    getString(com.pixel.agent.R.string.default_comment_1),
+                    getString(com.pixel.agent.R.string.default_comment_2),
+                    getString(com.pixel.agent.R.string.default_comment_3),
+            };
+        }
+        flow = new FollowFlow(getApplicationContext(), msgs, target, comments,
+                new FollowFlow.Listener() {
             @Override
             public void onLog(final String line) {
                 ui.post(() -> {
@@ -425,7 +492,8 @@ public class FloatingWindowService extends Service {
             public void onProgress(final int done, final int t, final int followed, final int dm) {
                 ui.post(() -> {
                     if (statusView != null) {
-                        statusView.setText(String.format("进度 %d/%d 关注%d 私信%d", done, t, followed, dm));
+                        statusView.setText(String.format(
+                                "进度 %d/%d 关注%d 私信%d", done, t, followed, dm));
                     }
                     if (startBtn != null) startBtn.setText("运行中");
                 });
@@ -440,8 +508,9 @@ public class FloatingWindowService extends Service {
             }
         });
         new Thread(flow, "followFlowFloat").start();
-        if (statusView != null) statusView.setText("已启动，正在打开微信…");
+        if (statusView != null) statusView.setText("已启动（留言+关注+私信）…");
         if (startBtn != null) startBtn.setText("运行中");
+        touch();
     }
 
     public void stopFlow() {
@@ -497,19 +566,21 @@ public class FloatingWindowService extends Service {
         ui.post(() -> Toast.makeText(this, s, Toast.LENGTH_SHORT).show());
     }
 
-    public void updatePrefs(String msg, int target) {
+    public void updatePrefs(String msg, int target, String comments) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString(KEY_MSG, msg)
                 .putInt(KEY_TARGET, target)
+                .putString(KEY_COMMENTS, comments)
                 .apply();
     }
 
-    public static void updatePrefsStatic(Context ctx, String msg, int target) {
+    public static void updatePrefsStatic(Context ctx, String msg, int target, String comments) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_MSG, msg)
                 .putInt(KEY_TARGET, target)
+                .putString(KEY_COMMENTS, comments)
                 .apply();
         FloatingWindowService s = instance;
-        if (s != null) s.updatePrefs(msg, target);
+        if (s != null) s.updatePrefs(msg, target, comments);
     }
 }

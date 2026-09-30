@@ -1,89 +1,225 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true"
+    android:background="#F4F6F8">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="PixelAgent 微信互关（悬浮窗版）"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:paddingBottom="8dp" />
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="状态: 待启动"
-        android:textSize="14sp"
-        android:paddingBottom="12dp" />
+        <!-- 顶栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_header"
+            android:padding="18dp"
+            android:layout_marginBottom="12dp">
 
-    <Button
-        android:id="@+id/btnTest"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="0. 测试截屏+检测(看logcat)" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PixelAgent"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-    <Button
-        android:id="@+id/btnCapture"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="1. 启动截屏服务（选整个屏幕）" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="微信互关自动化 · 悬浮窗控制"
+                android:textColor="#B3E5FC"
+                android:textSize="13sp"
+                android:layout_marginTop="2dp" />
 
-    <Button
-        android:id="@+id/btnAccessibility"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="2. 开启无障碍（只开 PixelAgent）" />
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="状态: 待启动"
+                android:textColor="#E3F2FD"
+                android:textSize="13sp"
+                android:layout_marginTop="10dp" />
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/btnFloat"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="3. 显示悬浮窗（需允许悬浮窗权限）" />
+        <!-- 权限卡片 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp"
+            android:layout_marginBottom="10dp">
 
-    <EditText
-        android:id="@+id/editMsg"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="私信话术"
-        android:text="@string/default_dm_msg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="① 权限准备"
+                android:textColor="#0D47A1"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
 
-    <Button
-        android:id="@+id/btnStart"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="4. 弹出悬浮窗并打开微信（点悬浮窗开始）" />
+            <Button
+                android:id="@+id/btnTest"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="测试截屏 + 检测"
+                android:textSize="13sp" />
 
-    <Button
-        android:id="@+id/btnStop"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="关闭悬浮窗" />
+            <Button
+                android:id="@+id/btnCapture"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="8dp"
+                android:text="启动截屏（选整个屏幕）"
+                android:textSize="13sp" />
 
-    <Button
-        android:id="@+id/btnRestoreIme"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="5. 恢复键盘（搜狗/系统输入法）" />
+            <Button
+                android:id="@+id/btnAccessibility"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="8dp"
+                android:text="开启无障碍（仅 PixelAgent）"
+                android:textSize="13sp" />
+        </LinearLayout>
 
-    <TextView
-        android:id="@+id/logText"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:textSize="12sp"
-        android:fontFamily="monospace"
-        android:scrollbars="vertical"
-        android:text="日志:\n" />
+        <!-- 悬浮窗 + 内容卡片 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp"
+            android:layout_marginBottom="10dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="用法: 截屏→无障碍→悬浮窗→微信前台→点悬浮窗「开始」。不要开 TalkBack。"
-        android:textSize="11sp"
-        android:paddingTop="8dp" />
-</LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="② 悬浮窗与文案"
+                android:textColor="#0D47A1"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnFloat"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="显示悬浮窗"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/editMsg"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_edit"
+                android:hint="私信话术（关注后求回关）"
+                android:padding="12dp"
+                android:text="@string/default_dm_msg"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="评论留言（自动轮换，如：互关，一起努力～）"
+                android:textColor="#546E7A"
+                android:textSize="12sp"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/editComment"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_edit"
+                android:padding="12dp"
+                android:text="互关，一起努力～|已关注，求回关，一起加油！|互关抱团，长期互动～"
+                android:textColor="#37474F"
+                android:textSize="13sp"
+                android:layout_marginTop="4dp" />
+
+            <Button
+                android:id="@+id/btnStart"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_btn_primary"
+                android:text="开始互关（打开微信后点悬浮窗）"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btnStop"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_btn_danger"
+                    android:text="关闭悬浮窗"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnRestoreIme"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_btn_secondary"
+                    android:text="恢复键盘"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 日志卡片 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp"
+            android:layout_marginBottom="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="③ 运行日志"
+                android:textColor="#0D47A1"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/logText"
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:background="@drawable/bg_log"
+                android:fontFamily="monospace"
+                android:padding="10dp"
+                android:scrollbars="vertical"
+                android:text="日志:\n"
+                android:textColor="#263238"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="20dp"
+            android:text="用法：截屏 → 无障碍 → 悬浮窗 → 微信前台 → 点「开始」。勿开 TalkBack。悬浮窗可拖到侧边收起。"
+            android:textColor="#78909C"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>

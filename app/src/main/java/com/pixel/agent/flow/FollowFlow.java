@@ -1,5 +1,7 @@
 package com.pixel.agent.flow;
 
+import com.pixel.agent.R;
+
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -37,6 +39,7 @@ public class FollowFlow implements Runnable {
 
     private final Context context;
     private final String[] msgs;
+    private final String[] commentMsgs;
     private final Listener listener;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean running = false;
@@ -44,7 +47,8 @@ public class FollowFlow implements Runnable {
 
     private final List<Integer> processed = new ArrayList<>();
     private int msgIdx = 0;
-    private int done = 0, successFollow = 0, successDm = 0;
+    private int commentIdx = 0;
+    private int done = 0, successFollow = 0, successDm = 0, successComment = 0;
     private int searchIdx = 0;
     private int articleTaps = 0;
     private int emptyCommentSwipes = 0;
@@ -57,9 +61,22 @@ public class FollowFlow implements Runnable {
     }
 
     public FollowFlow(Context ctx, String[] msgs, int target, Listener l) {
+        this(ctx, msgs, target, null, l);
+    }
+
+    public FollowFlow(Context ctx, String[] msgs, int target, String[] comments, Listener l) {
         this.context = ctx;
         this.msgs = msgs;
         this.target = target;
+        if (comments != null && comments.length > 0) {
+            this.commentMsgs = comments;
+        } else {
+            this.commentMsgs = new String[]{
+                    ctx.getString(R.string.default_comment_1),
+                    ctx.getString(R.string.default_comment_2),
+                    ctx.getString(R.string.default_comment_3),
+            };
+        }
         this.listener = l;
     }
 
@@ -229,6 +246,10 @@ public class FollowFlow implements Runnable {
         ui.post(() -> {
             if (listener != null) listener.onProgress(d, t, f, m);
         });
+    }
+
+    public int getSuccessComment() {
+        return successComment;
     }
 
     private int screenW() {
@@ -573,7 +594,10 @@ public class FollowFlow implements Runnable {
 
                 case COMMENTS:
                     idleRounds = 0;
-                    if (!processComments(d)) {
+                    // 先尝试自动留言（互关/一起努力），再点头像关注
+                    if (tryPostComment(d)) {
+                        emptyCommentSwipes = 0;
+                    } else if (!processComments(d)) {
                         emptyCommentSwipes++;
                         if (emptyCommentSwipes >= 3) {
                             emptyCommentSwipes = 0;
@@ -630,11 +654,91 @@ public class FollowFlow implements Runnable {
         }
 
         String summary = String.format(
-                "完成: 处理%d人 关注%d 私信%d", done, successFollow, successDm);
+                "完成: 处理%d人 关注%d 私信%d 留言%d",
+                done, successFollow, successDm, successComment);
         log(summary);
         ui.post(() -> {
             if (listener != null) listener.onFinish(summary);
         });
+    }
+
+    /**
+     * 评论区自动留言：点写留言/底部输入 → 注入互关文案 → 发送。
+     * 文案从 commentMsgs 轮换。失败不阻断关注流程。
+     */
+    private boolean tryPostComment(PixelDetector d) {
+        if (commentMsgs == null || commentMsgs.length == 0) return false;
+        if (!ensureWechatForeground(true)) return false;
+
+        String text = commentMsgs[commentIdx % commentMsgs.length];
+        int w = screenW(), h = screenH();
+
+        // 候选「写留言」入口：评论区底部输入条
+        int[][] entries = {
+                {630, 2680}, {630, 2720}, {480, 2700},
+                {780, 2700}, {630, 2620}
+        };
+        boolean opened = false;
+        for (int[] e : entries) {
+            tapXY(e[0], e[1]);
+            sleep(1800);
+            PixelDetector d2 = shot();
+            if (d2 == null) continue;
+            PixelDetector.InputMode mode = d2.dmInputMode();
+            if (mode == PixelDetector.InputMode.TEXT || d2.dmInputHasText()) {
+                opened = true;
+                log("评论输入已打开 (" + e[0] + "," + e[1] + ")");
+                break;
+            }
+            PixelDetector.Page p = d2.pageKind();
+            if (p == PixelDetector.Page.CARD_UNFOLLOWED
+                    || p == PixelDetector.Page.CARD_FOLLOWED
+                    || p == PixelDetector.Page.DM) {
+                back();
+                sleep(1000);
+            }
+        }
+        if (!opened) {
+            log("未打开评论输入, 尝试点头像关注");
+            return false;
+        }
+
+        // 若在语音模式，先切文字
+        PixelDetector d3 = shot();
+        if (d3 != null && d3.dmInputMode() == PixelDetector.InputMode.VOICE) {
+            PixelDetector.Btn icon = d3.findBottomLeftIcon();
+            if (icon != null) {
+                tap(icon);
+                sleep(1500);
+                d3 = shot();
+            }
+        }
+
+        clearText();
+        boolean typed = typeViaAdbKeyboard(text);
+        if (!typed) {
+            log("留言注入失败");
+            return false;
+        }
+        log("已输入留言: " + text);
+
+        PixelDetector d4 = shot();
+        if (d4 == null) return false;
+        PixelDetector.Btn send = d4.findSendButton();
+        if (send == null) {
+            // 评论区发送按钮可能与私信不同：试底部绿色区域
+            tapXY((int) (w * 0.78), (int) (h * 0.96));
+        } else {
+            tap(send);
+        }
+        sleep(2000);
+        successComment++;
+        log("评论留言成功 #" + successComment + " (" + text + ")");
+        progress();
+        // 返回评论列表，准备继续点头像
+        back();
+        sleep(1200);
+        return true;
     }
 
     private boolean processComments(PixelDetector d) {

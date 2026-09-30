@@ -2,7 +2,7 @@
 # PixelAgent 真机调试批量命令（vivo 1260x2800）
 # 用法示例:
 #   export SER=10AF3J2PPA0021N
-#   ./scripts/debug-adb.sh install ./app-debug-0.17.apk
+#   ./scripts/debug-adb.sh install ./app-debug-0.18.apk
 #   ./scripts/debug-adb.sh setup
 #   ./scripts/debug-adb.sh capture
 #   ./scripts/debug-adb.sh float
@@ -15,7 +15,7 @@ SER="${SER:-10AF3J2PPA0021N}"
 ADB=(adb -s "$SER")
 APK="${1:-}"
 CMD="${2:-help}"
-APK_PATH="${APK:-./app-debug-0.17.apk}"
+APK_PATH="${APK:-./app-debug-0.18.apk}"
 
 a() { "${ADB[@]}" "$@"; }
 

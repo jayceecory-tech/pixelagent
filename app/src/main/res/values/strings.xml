@@ -3,4 +3,7 @@
     <string name="app_name">PixelAgent</string>
     <string name="tap_desc">像素自动化点击服务：用于模拟屏幕点击与滑动，不读取任何页面内容。</string>
     <string name="default_dm_msg">你好～刚在互关帖关注了你的公众号！我是「声骸」，写娱乐热点原创解读的，方便的话回关一下呀，以后常互动～</string>
+    <string name="default_comment_1">互关，一起努力～</string>
+    <string name="default_comment_2">已关注，求回关，一起加油！</string>
+    <string name="default_comment_3">互关抱团，长期互动～</string>
 </resources>
